@@ -1,0 +1,10 @@
+define KMACHINE aaeonc
+define KARCH x86_64
+
+include ktypes/standard/standard.scc nopatch
+define KTYPE standard/base
+
+branch aaeonc
+
+kconf hardware aaeonc.cfg
+include aaeonc-patches.scc

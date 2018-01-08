@@ -1,0 +1,3 @@
+patch 0001-disable-RTS-override-on-LPSS-UART-with-Auto-Flow-Con.patch
+patch 0002-serial-8250_dw-add-quirk-to-disable-DMA-on-Cherry-Tr.patch
+
