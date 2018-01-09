@@ -407,7 +407,7 @@ index 000000000000..278a24eafdff
 +	err = watchdog_start();
 +	if (err) {
 +		clear_bit(0, &watchdog.opened);
-+		pri_err(DRVNAME ": fail to open watchdog...\n");
++		pr_err(DRVNAME ": fail to open watchdog...\n");
 +		return err;
 +	}
 +
