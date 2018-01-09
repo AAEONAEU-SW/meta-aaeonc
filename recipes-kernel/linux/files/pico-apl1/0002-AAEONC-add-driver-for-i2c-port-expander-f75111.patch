@@ -1,0 +1,463 @@
+From 6e0c6e56ffa91e8d0e3738f0ce9998f106091cde Mon Sep 17 00:00:00 2001
+From: Nicola Lunghi <nicola.lunghi@emutex.com>
+Date: Mon, 11 Dec 2017 15:01:13 +0000
+Subject: [PATCH 2/2] AAEONC: add driver for i2c port expander f75111
+
+inserted gpio-f75111.h inside gpio-f75111.c
+
+fix checkpatch on gpio-f75111.h
+---
+ drivers/gpio/Kconfig       |   9 +
+ drivers/gpio/Makefile      |   1 +
+ drivers/gpio/gpio-f75111.c | 407 +++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 417 insertions(+)
+ create mode 100644 drivers/gpio/gpio-f75111.c
+
+diff --git a/drivers/gpio/Kconfig b/drivers/gpio/Kconfig
+index d5d36549ecc1..f69b839b1fb8 100644
+--- a/drivers/gpio/Kconfig
++++ b/drivers/gpio/Kconfig
+@@ -687,6 +687,15 @@ config GPIO_ADNP
+ 	  enough to represent all pins, but the driver will assume a
+ 	  register layout for 64 pins (8 registers).
+ 
++config GPIO_F75111
++	tristate "F75111 GPIO support"
++	help
++	  This option enables support for GPIOs found on Fintek I2C gpio expander
++	  chip F75111.
++
++	  To compile this driver as a module, choose M here: the module will
++	  be called gpio-f75111.
++
+ config GPIO_MAX7300
+ 	tristate "Maxim MAX7300 GPIO expander"
+ 	select GPIO_MAX730X
+diff --git a/drivers/gpio/Makefile b/drivers/gpio/Makefile
+index a7676b82de6f..7a5bb01725ef 100644
+--- a/drivers/gpio/Makefile
++++ b/drivers/gpio/Makefile
+@@ -47,6 +47,7 @@ obj-$(CONFIG_GPIO_EM)		+= gpio-em.o
+ obj-$(CONFIG_GPIO_EP93XX)	+= gpio-ep93xx.o
+ obj-$(CONFIG_GPIO_ETRAXFS)	+= gpio-etraxfs.o
+ obj-$(CONFIG_GPIO_F7188X)	+= gpio-f7188x.o
++obj-$(CONFIG_GPIO_F75111)	+= gpio-f75111.o
+ obj-$(CONFIG_GPIO_GE_FPGA)	+= gpio-ge.o
+ obj-$(CONFIG_GPIO_GPIO_MM)	+= gpio-gpio-mm.o
+ obj-$(CONFIG_GPIO_GRGPIO)	+= gpio-grgpio.o
+diff --git a/drivers/gpio/gpio-f75111.c b/drivers/gpio/gpio-f75111.c
+new file mode 100644
+index 000000000000..e76b7168bb7a
+--- /dev/null
++++ b/drivers/gpio/gpio-f75111.c
+@@ -0,0 +1,407 @@
++/*
++ * drivers/gpio/f75111.c
++ *
++ * Driver for the Fintec F75111 chip
++ *
++ * Copyright (C) 2017 Nick Chen <nick1chen@aaeon.com.tw>
++ *
++ *		Based on f75111.c by Arnaud Patard
++ *
++ * Note 1 : This driver is implementing only basic stuff : gpio mode or led mode
++ * Note 2 : The gpios are configured as leds or gpio thanks to pdata->gpios. One
++ *         can set pdata->leds_data to configure leds on gpios (if the gpios are
++ *         in LED mode, you can set the pwm with the timer trigger stuff)
++ */
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/slab.h>
++#include <linux/debugfs.h>
++#include <linux/i2c.h>
++#include <linux/leds.h>
++#include <linux/workqueue.h>
++#include <linux/gpio.h>
++
++/* F75111.h content */
++#define F75_CTRL			0x01
++#define F75_CTRL_INIT			(1<<7)
++#define F75_CTRL_EN_WDT10		(1<<5)
++#define F75_CTRL_SMART_PM		(1<<1)
++#define F75_CTRL_POWERDOWN		(1<<0)
++
++#define F75_STATUS			0x02
++#define F75_STATUS_POWERDOWN	(1<<3)
++#define F75_STATUS_I2C_ADDR		(1<<1)
++
++/*
++ * The datasheet is talking about pin and
++ * not gpio but to get more understandable
++ * I'm using gpio
++ */
++#define F75_FUNC			0x03
++#define F75_FUNC_IRQ_LEVEL		6
++#define F75_FUNC_IRQ_MODE		5
++#define F75_FUNC_GP12			3
++#define F75_FUNC_GP11			2
++#define F75_FUNC_GP10			0
++
++#define F75_MODE1			0x04
++#define F75_MODE1_GP27			7
++#define F75_MODE1_GP15			6
++#define F75_MODE1_GP14			5
++#define F75_MODE1_GP22			4
++#define F75_MODE1_GP21			3
++#define F75_MODE1_GP20			2
++#define F75_MODE1_GP17			1
++#define F75_MODE1_GP16			0
++
++#define F75_MODE2			0x05
++#define F75_MODE2_GP23			3
++#define F75_MODE2_GP24			2
++#define F75_MODE2_GP25			1
++#define F75_MODE2_GP26			0
++
++#define F75_FREQ1			0x06
++#define F75_FREQ2			0x07
++#define F75_FREQ3			0x08
++#define F75_FREQ4			0x09
++
++#define F75111_GPIO_OUT_CTRL		0x00
++#define F75111_GPIO_OUT_DATA		0x01
++#define F75111_GPIO_INP_STATUS		0x02
++#define F75111_GPIO_PULSE_CTRL		0x03
++#define F75111_GPIO_PULSE_WIDTH		0x04
++#define F75111_GPIO_PULLUP			0x05
++#define F75111_GPIO_INP_DB			0x06
++#define F75111_GPIO_PULSE_INV		0x07
++#define F75111_GPIO_EDGE_EN			0x08
++#define F75111_GPIO_EDGE_STATUS		0x09
++#define F75111_GPIO_SMI_EN			0x0A
++#define F75111_GPIO_OUT_DRIVE		0x0B
++#define F75111_GPIO_DB_TIME			0x0C
++
++#define F75_CHIPID1			0x5A
++#define F75_CHIPID2			0x5B
++#define F75_VERSION			0x5C
++#define F75_VENDOR1			0x5D
++#define F75_VENDOR2			0x5E
++
++#define F75111_ID			0x0300
++#define F75111_VER			0x10
++#define FINTEC_ID			0x1934
++
++/*
++ * GPXX with XX in octal.
++ */
++enum {
++	F75111_GP10 = 0,
++	F75111_GP11,
++	F75111_GP12,
++	F75111_GP13,
++	F75111_GP14,
++	F75111_GP15,
++	F75111_GP16,
++	F75111_GP17,
++	F75111_GP20,
++	F75111_GP21,
++	F75111_GP22,
++	F75111_GP23,
++	F75111_GP24,
++	F75111_GP25,
++	F75111_GP26,
++	F75111_GP27,
++	F75111_GP30,
++	F75111_GP31,
++	F75111_GP32,
++	F75111_GP33,
++};
++
++enum {
++	F75111_LED_TRISTATE = 0,
++	F75111_LED_HALF_HZ,
++	F75111_LED_HZ,
++	F75111_LED_LOW
++};
++enum {
++	F75111_PIN_MODE_GPIO = 0,
++	F75111_PIN_MODE_LED,
++	F75111_PIN_MODE_IRQ,
++	F75111_PIN_MODE_WDTOUT,
++	F75111_PIN_MODE_WD_OUT = 2
++};
++
++struct f75111_gpio {
++	unsigned char pin;
++	unsigned char mode;
++};
++
++struct f75111_pdata {
++	unsigned int gpio_base;
++	struct f75111_gpio *gpios;
++	int size;
++	struct gpio_led_platform_data *leds_data;
++	int (*init)(struct i2c_client *client, int gpio_base);
++	int (*exit)(struct i2c_client *client, int gpio_base);
++};
++
++/*  end of F75111.h content */
++
++#define MAX_TRIES 2
++
++struct f75111 {
++	struct gpio_chip	chip;
++	struct i2c_client	*client;
++};
++
++static struct i2c_driver f75111_driver;
++
++/*
++ * Gahhhh... the gpio chip transfers don't always succeed at the first try
++ */
++static inline s32 read_byte(struct i2c_client *client, u8 command)
++{
++	int i;
++	s32 value = -1;
++
++	for (i = 0 ; (i < MAX_TRIES) && (value < 0); i++)
++		value = i2c_smbus_read_byte_data(client, command);
++
++	if (value < 0)
++		dev_err(&client->dev,
++			"Reading reg 0x%02x failed after %d tries\n",
++			command, i);
++	return value;
++}
++
++static inline s32 write_byte(struct i2c_client *client, u8 command, u8 value)
++{
++	int i;
++	s32 ret = -1;
++
++	for (i = 0 ; (i < MAX_TRIES) && (ret < 0); i++)
++		ret = i2c_smbus_write_byte_data(client, command, value);
++
++	if (ret < 0)
++		dev_err(&client->dev,
++			"Reading reg 0x%02x failed after %d tries\n",
++			command, i);
++
++	return ret;
++}
++
++/*
++ * Set/read i/o register 10-1C, 20-2C, 40-4C
++ * offset : pin
++ * reg    : register to write
++ * data   : data to write
++ * read   : 1 = read register value, 0 = set register with data
++ *
++ * if read is set, returns 0, 1, error code
++ * else return 0 or error code
++ */
++
++static int f75111_io(struct i2c_client *client,
++			unsigned int offset, u8 reg, bool data, bool read)
++{
++	s32 value;
++
++	if (offset > F75111_GP33)
++		return -EINVAL;
++
++	offset += 010;
++
++	/* pin GP3{0,1,2,3}, regs are at 0x40 not 0x30 */
++	if (offset / 8 == 3)
++		reg += 0x10;
++
++	reg += (offset/8) * 0x10;
++	value = read_byte(client, reg);
++	if (value < 0)
++		return value;
++
++	if (read)
++		return value & (1 << (offset % 8)) ? 1 : 0;
++
++	value &= ~(1 << (offset % 8));
++	value |= (data << (offset % 8));
++	return write_byte(client, reg, value);
++}
++
++static int f75111_input(struct gpio_chip *chip, unsigned int offset)
++{
++	struct f75111   *f75111 = container_of(chip, struct f75111, chip);
++	struct i2c_client *client = f75111->client;
++
++	return f75111_io(client, offset, F75111_GPIO_OUT_CTRL, 0, 0);
++}
++
++static int f75111_get(struct gpio_chip *chip, unsigned int offset)
++{
++	struct f75111	*f75111 = container_of(chip, struct f75111, chip);
++	struct i2c_client *client = f75111->client;
++	int dir;
++
++	dir = f75111_io(client, offset, F75111_GPIO_OUT_CTRL, 0, 1);
++	if (dir)
++		return f75111_io(client, offset, F75111_GPIO_OUT_DATA, 0, 1);
++	else
++		return f75111_io(client, offset, F75111_GPIO_INP_STATUS, 0, 1);
++}
++
++static int f75111_output(struct gpio_chip *chip, unsigned int offset, int value)
++{
++	struct f75111   *f75111 = container_of(chip, struct f75111, chip);
++	struct i2c_client *client = f75111->client;
++	int ret;
++
++	/* set initial value */
++	ret = f75111_io(client, offset, F75111_GPIO_OUT_DATA, value ? 1 : 0, 0);
++	if (ret < 0)
++		return ret;
++
++	/* configure as output */
++	return f75111_io(client, offset, F75111_GPIO_OUT_CTRL, 1, 0);
++}
++
++static void f75111_set(struct gpio_chip *chip, unsigned int offset, int data)
++{
++	struct f75111   *f75111 = container_of(chip, struct f75111, chip);
++	struct i2c_client *client = f75111->client;
++
++	f75111_io(client, offset, F75111_GPIO_OUT_DATA, data ? 1 : 0, 0);
++}
++
++/*
++ * Check chip id
++ */
++
++static inline int f75111_check_id(struct i2c_client *client)
++{
++	int retval = 0;
++	u16 chip_id, vendor_id;
++
++	chip_id  = read_byte(client, F75_CHIPID1) << 8;
++	chip_id |= read_byte(client, F75_CHIPID2);
++
++
++	vendor_id  = read_byte(client, F75_VENDOR1) << 8;
++	vendor_id |= read_byte(client, F75_VENDOR2);
++
++	if ((chip_id != F75111_ID)
++	    || (vendor_id != FINTEC_ID)) {
++		dev_err(&client->dev, "%s: Got %x %x, expected %x %x\n",
++			__func__,
++			chip_id, vendor_id,
++			F75111_ID, FINTEC_ID);
++		retval = -ENODEV;
++	}
++
++	return retval;
++}
++
++static int f75111_probe(struct i2c_client *client,
++			const struct i2c_device_id *id)
++{
++	struct f75111 *f75111;
++	int err = -ENODEV;
++	int line;
++
++	if (!i2c_check_functionality(client->adapter,
++				     I2C_FUNC_SMBUS_BYTE_DATA)) {
++		dev_err(&client->dev,
++			"%s: no smbus_byte support !\n", __func__);
++		return err;
++	}
++
++	/*
++	 * Check that there's a chip which additionnaly has the right id
++	 */
++
++	err = f75111_check_id(client);
++	if (err)
++		goto exit;
++
++	f75111 = devm_kzalloc(&client->dev, sizeof(struct f75111), GFP_KERNEL);
++	if (f75111 == NULL)
++		return -ENOMEM;
++
++	/*
++	 * Everything is configured, time to "add" the chip
++	 */
++
++	f75111->chip.base = -1;
++	f75111->chip.can_sleep = 1;
++	f75111->chip.ngpio = F75111_GP33 - F75111_GP10 + 1;
++	f75111->chip.direction_input = f75111_input;
++	f75111->chip.get = f75111_get;
++	f75111->chip.direction_output = f75111_output;
++	f75111->chip.set = f75111_set;
++	f75111->chip.label = client->name;
++	f75111->client = client;
++	i2c_set_clientdata(client, f75111);
++
++	dev_info(&client->dev,
++			"Registering %s base %d\n",
++			f75111->chip.label, f75111->chip.base);
++	line = __LINE__;
++	err = gpiochip_add(&f75111->chip);
++	if (err)
++		goto exit_kfree;
++
++	return 0;
++
++exit_kfree:
++	dev_err(&client->dev, "%s (%d): err %d\n", __func__, line, err);
++exit:
++	return err;
++}
++
++static int f75111_remove(struct i2c_client *client)
++{
++	struct f75111 *f75111 = i2c_get_clientdata(client);
++
++	gpiochip_remove(&f75111->chip);
++
++	return 0;
++}
++
++static const struct i2c_device_id f75111_id[] = {
++	{ "f75111", 0 },
++	{ }
++};
++MODULE_DEVICE_TABLE(i2c, f75111_id);
++
++static const struct of_device_id F75111_match[] = {
++	{ .compatible = "f75111" },
++	{},
++};
++MODULE_DEVICE_TABLE(of, F75111_match);
++
++static struct i2c_driver f75111_driver = {
++	.driver = {
++		.name   = "f75111",
++		.owner	= THIS_MODULE,
++		.of_match_table = F75111_match,
++	},
++
++	.probe		= f75111_probe,
++	.remove		= f75111_remove,
++	.id_table	= f75111_id,
++};
++
++static int __init f75111_init(void)
++{
++	return i2c_add_driver(&f75111_driver);
++}
++
++static void __exit f75111_exit(void)
++{
++	i2c_del_driver(&f75111_driver);
++}
++
++module_init(f75111_init);
++module_exit(f75111_exit);
++
++MODULE_AUTHOR("Nick Chen <nick1chen@aaeon.com.tw>");
++MODULE_DESCRIPTION("F75111 driver");
++MODULE_LICENSE("GPL");
+-- 
+2.15.1
+

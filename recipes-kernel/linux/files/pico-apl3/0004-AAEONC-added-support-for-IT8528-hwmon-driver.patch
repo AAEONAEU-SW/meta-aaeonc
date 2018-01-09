@@ -1,0 +1,699 @@
+From 03166251e93bbca291886d1084401b7d4211cd73 Mon Sep 17 00:00:00 2001
+From: Nicola Lunghi <nicola.lunghi@emutex.com>
+Date: Mon, 18 Dec 2017 16:45:43 +0000
+Subject: [PATCH 4/4] AAEONC: added support for IT8528 hwmon driver
+
+AAEONEC: checkpatch cleanup of drivers/hwmon/echwm.c
+AAEONEC: drivers/hwmon/echwm: checkpatch cleanup of dead code, comment by Nick Chen
+
+Signed-off-by: Nicola Lunghi <nicola.lunghi@emutex.com>
+---
+ drivers/hwmon/Kconfig  |   7 +
+ drivers/hwmon/Makefile |   1 +
+ drivers/hwmon/echwm.c  | 644 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 652 insertions(+)
+ create mode 100644 drivers/hwmon/echwm.c
+
+diff --git a/drivers/hwmon/Kconfig b/drivers/hwmon/Kconfig
+index 190d270b20a2..591ce752d01e 100644
+--- a/drivers/hwmon/Kconfig
++++ b/drivers/hwmon/Kconfig
+@@ -411,6 +411,13 @@ config SENSORS_DA9055
+ 	  This driver can also be built as a module.  If so, the module
+ 	  will be called da9055-hwmon.
+ 
++config SENSORS_EC
++        tristate "Fintek IT8528 hwmon sensor driver"
++        depends on !PPC
++        help
++          If you say yes here you get support for hardware monitoring
++          features of the Fintek iIT8528 Super-I/O chips.
++
+ config SENSORS_I5K_AMB
+ 	tristate "FB-DIMM AMB temperature sensor on Intel 5000 series chipsets"
+ 	depends on PCI
+diff --git a/drivers/hwmon/Makefile b/drivers/hwmon/Makefile
+index d2cb7e804a0f..244f637725cd 100644
+--- a/drivers/hwmon/Makefile
++++ b/drivers/hwmon/Makefile
+@@ -54,6 +54,7 @@ obj-$(CONFIG_SENSORS_DELL_SMM)	+= dell-smm-hwmon.o
+ obj-$(CONFIG_SENSORS_DME1737)	+= dme1737.o
+ obj-$(CONFIG_SENSORS_DS620)	+= ds620.o
+ obj-$(CONFIG_SENSORS_DS1621)	+= ds1621.o
++obj-$(CONFIG_SENSORS_EC)	+= echwm.o
+ obj-$(CONFIG_SENSORS_EMC1403)	+= emc1403.o
+ obj-$(CONFIG_SENSORS_EMC2103)	+= emc2103.o
+ obj-$(CONFIG_SENSORS_EMC6W201)	+= emc6w201.o
+diff --git a/drivers/hwmon/echwm.c b/drivers/hwmon/echwm.c
+new file mode 100644
+index 000000000000..bf261b6a6d81
+--- /dev/null
++++ b/drivers/hwmon/echwm.c
+@@ -0,0 +1,644 @@
++/*
++ * echwm.c - driver for the AAEON EC IT8528 Super-I/O
++ *		chips integrated hardware monitoring features
++ *
++ * Copyright (C) 2017  Nick Chen <nick1chen@aaeon.com.tw>
++ *
++ *	Based on f71805f.c by Jean Delvare <khali@linux-fr.org>
++ *	Based on echwm.c by Jason Wang <jason2wang@aaeon.com.tw>
++ *
++ * The F71805F/FG is a LPC Super-I/O chip made by Fintek. It integrates
++ * complete hardware monitoring features: voltage, fan and temperature
++ * sensors, and manual and automatic fan speed control.
++ *
++ * The F71872F/FG is almost the same, with two more voltages monitored,
++ * and 6 VID inputs.
++ *
++ * The F71806F/FG is essentially the same as the F71872F/FG. It even has
++ * the same chip ID, so the driver can't differentiate between.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++ */
++
++#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/slab.h>
++#include <linux/jiffies.h>
++#include <linux/platform_device.h>
++#include <linux/hwmon.h>
++#include <linux/hwmon-sysfs.h>
++#include <linux/err.h>
++#include <linux/mutex.h>
++#include <linux/sysfs.h>
++#include <linux/ioport.h>
++#include <linux/acpi.h>
++#include <linux/kernel.h>
++#include <linux/delay.h>
++#include <linux/io.h>
++
++static unsigned short force_id;
++module_param(force_id, ushort, 0000);
++MODULE_PARM_DESC(force_id, "Override the detected device ID");
++
++static struct platform_device *pdev;
++
++#define DRVNAME "ec-hwm"
++
++enum kinds { aaeonec };
++
++/*
++ * Super-I/O constants and functions
++ */
++
++#define F71805F_LD_HWM		0xA5
++#define SIO_REG_LDSEL		0x10	/* Logical device select */
++#define SIO_REG_DEVID		0x20	/* Device ID (2 bytes) */
++#define SIO_REG_DEVREV		0x22	/* Device revision */
++#define SIO_AAEONEC_ID		0x85
++
++static inline int
++superio_inb(int base, int reg)
++{
++	outb(reg, base);
++	return inb(base + 1);
++}
++
++static inline void
++superio_outb(int base, int reg, int val)
++{
++	outb(reg, base);
++	outb(val, base + 1);
++}
++
++static inline void
++superio_select(int base, int ld)
++{
++	outb(SIO_REG_LDSEL, base);
++	outb(ld, base + 1);
++}
++
++static inline void
++superio_enter(int base)
++{
++	outb(0x87, base);
++	outb(0x87, base);
++}
++
++static inline void
++superio_exit(int base)
++{
++	outb(0xaa, base);
++}
++
++/*
++ * ISA constants
++ */
++
++#define REGION_LENGTH		8
++#define ADDR_REG_OFFSET		5
++#define DATA_REG_OFFSET		6
++
++/*
++ * Registers
++ */
++#define EC_INDEX_PORT		0x284
++#define EC_LDN_REG		0x10
++#define EC_FD_REG		0x11
++#define EC_CONF_REG		0x12
++#define EC_CONF_READ_REG	0x10
++#define EC_CONF_WRITE_REG	0x30
++#define EC_HWMON_REG		0xA5
++#define EC_TEMP_INDEX		0x00
++#define EC_FAN_SPEED		0xA6
++#define EC_FAN_INDEX		0x00
++#define EC_ADC0_INDEX		0x01
++#define EC_ADC1_INDEX		0x02
++#define EC_OPTION0_REG		0x13
++#define EC_OPTION1_REG		0x14
++#define EC_OPTION2_REG		0x15
++#define EC_OPTION3_REG		0x16
++#define EC_OPTION4_REG		0x17
++#define EC_OPTION5_REG		0x18
++#define EC_OPTION6_REG		0x19
++#define EC_OPTION7_REG		0x1A
++#define EC_OPTION8_REG		0x1B
++
++/* in nr from 0 to 10 (8-bit values) */
++#define F71805F_REG_IN(nr)		(0x10 + (nr))
++#define F71805F_REG_IN_HIGH(nr)		((nr) < 10 ? 0x40 + 2 * (nr) : 0x2E)
++#define F71805F_REG_IN_LOW(nr)		((nr) < 10 ? 0x41 + 2 * (nr) : 0x2F)
++
++/* temp nr from 0 to 2 (8-bit values) */
++#define F71805F_REG_TEMP		0x14
++#define F71805F_REG_START		0x00
++
++/*
++ * Data structures and manipulation thereof
++ */
++
++struct f71805f_auto_point {
++	u8 temp[3];
++	u16 fan[3];
++};
++
++struct f71805f_data {
++	unsigned short addr;
++	const char *name;
++	struct device *hwmon_dev;
++
++	struct mutex update_lock;
++	char valid;			/* !=0 if following fields are valid */
++	unsigned long last_updated;	/* In jiffies */
++	unsigned long last_limits;	/* In jiffies */
++
++	/* Register values */
++	u16 in[11];
++	u8 in_high[11];
++	u8 in_low[11];
++	u16 has_in;
++
++	u8 systemp;
++	u16 cpufan;
++	u8 temp_mode;
++};
++
++struct f71805f_sio_data {
++	enum kinds kind;
++	u8 boarid[6];
++	u8 fnsel1;
++};
++
++
++static inline long in_from_reg(u16 reg, int nr)
++{
++	reg = (((reg * 1000) * 3) / 1023);
++	return reg;
++}
++
++/* The 2 least significant bits are not used */
++static inline u8 in_to_reg(long val)
++{
++	if (val <= 0)
++		return 0;
++	if (val >= 2016)
++		return 0xfc;
++	return ((val + 16) / 32) << 2;
++}
++
++static inline long temp_from_reg(u8 reg)
++{
++	return reg * 1000;
++}
++
++static inline u8 temp_to_reg(long val)
++{
++	if (val <= 0)
++		return 0;
++	if (val >= 1000 * 0xff)
++		return 0xff;
++	return (val + 500) / 1000;
++}
++
++/*
++ * Device I/O access
++ */
++
++/* Must be called with data->update_lock held, except during initialization */
++static u8 f71805f_read8(struct f71805f_data *data, u8 reg)
++{
++	outb(reg, data->addr + ADDR_REG_OFFSET);
++	return inb(data->addr + DATA_REG_OFFSET);
++}
++
++/* Must be called with data->update_lock held, except during initialization */
++static void f71805f_write8(struct f71805f_data *data, u8 reg, u8 val)
++{
++	outb(reg, data->addr + ADDR_REG_OFFSET);
++	outb(val, data->addr + DATA_REG_OFFSET);
++}
++
++/*
++ * It is important to read the MSB first, because doing so latches the
++ * value of the LSB, so we are sure both bytes belong to the same value.
++ * Must be called with data->update_lock held, except during initialization
++ */
++
++static struct f71805f_data *f71805f_update_device(struct device *dev)
++{
++	struct f71805f_data *data = dev_get_drvdata(dev);
++	int nr;
++	unsigned char Hvol, Lvol;
++
++	mutex_lock(&data->update_lock);
++
++	/* Limit registers cache is refreshed after 60 seconds */
++	if (time_after(jiffies, data->last_updated + 60 * HZ)
++	 || !data->valid) {
++		for (nr = 0; nr < 11; nr++) {
++			if (!(data->has_in & (1 << nr)))
++				continue;
++			data->in_high[nr] = f71805f_read8(data,
++					    F71805F_REG_IN_HIGH(nr));
++			data->in_low[nr] = f71805f_read8(data,
++					   F71805F_REG_IN_LOW(nr));
++		}
++
++		data->last_limits = jiffies;
++	}
++
++	/* Measurement registers cache is refreshed after 1 second */
++	if (time_after(jiffies, data->last_updated + HZ) || !data->valid) {
++		superio_outb(EC_INDEX_PORT, EC_LDN_REG, EC_HWMON_REG);
++		superio_outb(EC_INDEX_PORT, EC_FD_REG, EC_TEMP_INDEX);
++		superio_outb(EC_INDEX_PORT, EC_CONF_REG, EC_CONF_READ_REG);
++		mdelay(30);
++
++		data->systemp = superio_inb(EC_INDEX_PORT, EC_OPTION2_REG);
++		superio_outb(EC_INDEX_PORT, EC_LDN_REG, EC_FAN_SPEED);
++		superio_outb(EC_INDEX_PORT, EC_FD_REG, EC_FAN_INDEX);
++		superio_outb(EC_INDEX_PORT, EC_CONF_REG, EC_CONF_READ_REG);
++		mdelay(30);
++
++		Hvol = superio_inb(EC_INDEX_PORT, EC_OPTION1_REG);
++		Lvol = superio_inb(EC_INDEX_PORT, EC_OPTION2_REG);
++		data->cpufan = ((Hvol << 8) | Lvol);
++
++		superio_outb(EC_INDEX_PORT, EC_LDN_REG, EC_HWMON_REG);
++		superio_outb(EC_INDEX_PORT, EC_FD_REG, EC_ADC0_INDEX);
++		superio_outb(EC_INDEX_PORT, EC_CONF_REG, EC_CONF_READ_REG);
++		mdelay(30);
++
++		for (nr = 0; nr < 2; nr++) {
++			Hvol = superio_inb(EC_INDEX_PORT, 0x18 + nr*2);
++			Lvol = superio_inb(EC_INDEX_PORT, 0x19 + nr*2);
++			data->in[nr] = (Hvol << 8 | Lvol);
++		}
++
++		superio_outb(EC_INDEX_PORT, EC_LDN_REG, EC_HWMON_REG);
++		superio_outb(EC_INDEX_PORT, EC_FD_REG, EC_ADC1_INDEX);
++		superio_outb(EC_INDEX_PORT, EC_CONF_REG, EC_CONF_READ_REG);
++		mdelay(30);
++
++		for (nr = 2; nr < 6; nr++) {
++			Hvol = superio_inb(EC_INDEX_PORT, 0x14 + (nr-2)*2);
++			Lvol = superio_inb(EC_INDEX_PORT, 0x15 + (nr-2)*2);
++			data->in[nr] = (Hvol << 8 | Lvol);
++		}
++
++		data->last_updated = jiffies;
++		data->valid = 1;
++	}
++
++	mutex_unlock(&data->update_lock);
++
++	return data;
++}
++
++/*
++ * Sysfs interface
++ */
++
++static ssize_t show_in(struct device *dev, struct device_attribute *devattr,
++		       char *buf)
++{
++	struct f71805f_data *data = f71805f_update_device(dev);
++	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
++	int nr = attr->index;
++
++	return sprintf(buf, "%ld\n", in_from_reg(data->in[nr], nr));
++}
++
++static ssize_t show_temp(struct device *dev, struct device_attribute *devattr,
++			 char *buf)
++{
++	struct f71805f_data *data = f71805f_update_device(dev);
++
++	return sprintf(buf, "%ld\n", temp_from_reg(data->systemp));
++}
++
++static ssize_t show_fan(struct device *dev, struct device_attribute *devattr,
++			 char *buf)
++{
++	struct f71805f_data *data = f71805f_update_device(dev);
++
++	return sprintf(buf, "%d\n", data->cpufan);
++}
++
++static ssize_t show_name(struct device *dev, struct device_attribute
++			 *devattr, char *buf)
++{
++	struct f71805f_data *data = dev_get_drvdata(dev);
++
++	return sprintf(buf, "%s\n", data->name);
++}
++
++static SENSOR_DEVICE_ATTR(in0_input, 0444, show_in, NULL, 0);
++static SENSOR_DEVICE_ATTR(in1_input, 0444, show_in, NULL, 1);
++static SENSOR_DEVICE_ATTR(in2_input, 0444, show_in, NULL, 2);
++static SENSOR_DEVICE_ATTR(in3_input, 0444, show_in, NULL, 3);
++static SENSOR_DEVICE_ATTR(in4_input, 0444, show_in, NULL, 4);
++static SENSOR_DEVICE_ATTR(in5_input, 0444, show_in, NULL, 5);
++
++static SENSOR_DEVICE_ATTR(temp1_input, 0444, show_temp, NULL, 0);
++static SENSOR_DEVICE_ATTR(fan1_input, 0444, show_fan, NULL, 0);
++
++static DEVICE_ATTR(name, 0444, show_name, NULL);
++
++static struct attribute *f71805f_attributes[] = {
++	&sensor_dev_attr_in0_input.dev_attr.attr,
++	&sensor_dev_attr_in1_input.dev_attr.attr,
++	&sensor_dev_attr_in2_input.dev_attr.attr,
++	&sensor_dev_attr_in3_input.dev_attr.attr,
++	&sensor_dev_attr_in4_input.dev_attr.attr,
++	&sensor_dev_attr_in5_input.dev_attr.attr,
++	&sensor_dev_attr_temp1_input.dev_attr.attr,
++	&sensor_dev_attr_fan1_input.dev_attr.attr,
++	&dev_attr_name.attr,
++	NULL
++};
++
++static const struct attribute_group f71805f_group = {
++	.attrs = f71805f_attributes,
++};
++
++static struct attribute *f71805f_attributes_optin[4][5] = {
++	{
++		NULL
++	}
++};
++
++static const struct attribute_group f71805f_group_optin[4] = {
++	{ .attrs = f71805f_attributes_optin[0] },
++	{ .attrs = f71805f_attributes_optin[1] },
++	{ .attrs = f71805f_attributes_optin[2] },
++	{ .attrs = f71805f_attributes_optin[3] },
++};
++
++
++
++/*
++ * Device registration and initialization
++ */
++
++static void f71805f_init_device(struct f71805f_data *data)
++{
++	u8 reg;
++
++	reg = f71805f_read8(data, F71805F_REG_START);
++	if ((reg & 0x41) != 0x01) {
++		pr_debug("Starting monitoring operations\n");
++		f71805f_write8(data, F71805F_REG_START, (reg | 0x01) & ~0x40);
++	}
++}
++
++static int f71805f_probe(struct platform_device *pdev)
++{
++	struct f71805f_sio_data *sio_data = pdev->dev.platform_data;
++	struct f71805f_data *data;
++	struct resource *res;
++	int i, err;
++
++	static const char * const names[] = {
++		"aaeonec",
++	};
++
++	data = devm_kzalloc(&pdev->dev, sizeof(struct f71805f_data),
++			    GFP_KERNEL);
++	if (!data)
++		return -ENOMEM;
++
++	res = platform_get_resource(pdev, IORESOURCE_IO, 0);
++	if (!devm_request_region(&pdev->dev, res->start + ADDR_REG_OFFSET, 2,
++				 DRVNAME)) {
++		dev_err(&pdev->dev,
++			"Failed to request region 0x%lx-0x%lx\n",
++			(unsigned long)(res->start + ADDR_REG_OFFSET),
++			(unsigned long)(res->start + ADDR_REG_OFFSET + 1));
++		return -EBUSY;
++	}
++	data->addr = res->start;
++	data->name = names[sio_data->kind];
++	mutex_init(&data->update_lock);
++
++	platform_set_drvdata(pdev, data);
++
++	/* Some voltage inputs depend on chip model and configuration */
++	switch (sio_data->kind) {
++	case aaeonec:
++		data->has_in = 0x1ff;
++		break;
++	}
++
++	/* Initialize the F71805F chip */
++	f71805f_init_device(data);
++
++	/* Register sysfs interface files */
++	err = sysfs_create_group(&pdev->dev.kobj, &f71805f_group);
++	if (err)
++		return err;
++	if (data->has_in & (1 << 4)) { /* in4 */
++		err = sysfs_create_group(&pdev->dev.kobj,
++					 &f71805f_group_optin[0]);
++		if (err)
++			goto exit_remove_files;
++	}
++	if (data->has_in & (1 << 8)) { /* in8 */
++		err = sysfs_create_group(&pdev->dev.kobj,
++					 &f71805f_group_optin[1]);
++		if (err)
++			goto exit_remove_files;
++	}
++	if (data->has_in & (1 << 9)) { /* in9 (F71872F/FG only) */
++		err = sysfs_create_group(&pdev->dev.kobj,
++					 &f71805f_group_optin[2]);
++		if (err)
++			goto exit_remove_files;
++	}
++	if (data->has_in & (1 << 10)) { /* in9 (F71872F/FG only) */
++		err = sysfs_create_group(&pdev->dev.kobj,
++					 &f71805f_group_optin[3]);
++		if (err)
++			goto exit_remove_files;
++	}
++
++	data->hwmon_dev = hwmon_device_register(&pdev->dev);
++	if (IS_ERR(data->hwmon_dev)) {
++		err = PTR_ERR(data->hwmon_dev);
++		dev_err(&pdev->dev, "Class registration failed (%d)\n", err);
++		goto exit_remove_files;
++	}
++
++	return 0;
++
++exit_remove_files:
++	sysfs_remove_group(&pdev->dev.kobj, &f71805f_group);
++	for (i = 0; i < 4; i++)
++		sysfs_remove_group(&pdev->dev.kobj, &f71805f_group_optin[i]);
++	return err;
++}
++
++static int f71805f_remove(struct platform_device *pdev)
++{
++	struct f71805f_data *data = platform_get_drvdata(pdev);
++	int i;
++
++	hwmon_device_unregister(data->hwmon_dev);
++	sysfs_remove_group(&pdev->dev.kobj, &f71805f_group);
++	for (i = 0; i < 4; i++)
++		sysfs_remove_group(&pdev->dev.kobj, &f71805f_group_optin[i]);
++
++	return 0;
++}
++
++static struct platform_driver f71805f_driver = {
++	.driver = {
++		.owner	= THIS_MODULE,
++		.name	= DRVNAME,
++	},
++	.probe		= f71805f_probe,
++	.remove		= f71805f_remove,
++};
++
++static int __init f71805f_device_add(unsigned short address,
++				     const struct f71805f_sio_data *sio_data)
++{
++	struct resource res = {
++		.start	= address,
++		.end	= address + REGION_LENGTH - 1,
++		.flags	= IORESOURCE_IO,
++	};
++	int err;
++
++	pdev = platform_device_alloc(DRVNAME, address);
++	if (!pdev) {
++		err = -ENOMEM;
++		pr_err("Device allocation failed\n");
++		goto exit;
++	}
++
++	res.name = pdev->name;
++	err = acpi_check_resource_conflict(&res);
++	if (err)
++		goto exit_device_put;
++
++	err = platform_device_add_resources(pdev, &res, 1);
++	if (err) {
++		pr_err("Device resource addition failed (%d)\n", err);
++		goto exit_device_put;
++	}
++
++	err = platform_device_add_data(pdev, sio_data,
++				       sizeof(struct f71805f_sio_data));
++	if (err) {
++		pr_err("Platform data allocation failed\n");
++		goto exit_device_put;
++	}
++
++	err = platform_device_add(pdev);
++	if (err) {
++		pr_err("Device addition failed (%d)\n", err);
++		goto exit_device_put;
++	}
++
++	return 0;
++
++exit_device_put:
++	platform_device_put(pdev);
++exit:
++	return err;
++}
++
++static int __init f71805f_find(int sioaddr, unsigned short *address,
++			       struct f71805f_sio_data *sio_data)
++{
++	int err = -ENODEV;
++	u16 devid;
++
++	static const char * const names[] = {
++		"AAEONEC",
++	};
++
++	superio_enter(sioaddr);
++
++	devid = force_id ? force_id : superio_inb(sioaddr, SIO_REG_DEVID);
++	switch (devid) {
++	case SIO_AAEONEC_ID:
++		sio_data->kind = aaeonec;
++		break;
++
++	default:
++		pr_info("Unsupported Fintek device, skipping\n");
++		goto exit;
++	}
++
++	*address = 0xA20;
++	if (*address == 0) {
++		pr_warn("Base address not set, skipping\n");
++		goto exit;
++	}
++	*address &= ~(REGION_LENGTH - 1);	/* Ignore 3 LSB */
++
++	err = 0;
++	pr_info("Found %s chip at %#x, revision %u\n",
++		names[sio_data->kind], *address,
++		superio_inb(sioaddr, SIO_REG_DEVREV));
++
++exit:
++	superio_exit(sioaddr);
++	return err;
++}
++
++
++static int __init f71805f_init(void)
++{
++	int err;
++	unsigned short address;
++	struct f71805f_sio_data sio_data;
++
++	if (f71805f_find(0x6e, &address, &sio_data)
++	 && f71805f_find(0x7e, &address, &sio_data))
++		return -ENODEV;
++
++	err = platform_driver_register(&f71805f_driver);
++	if (err)
++		goto exit;
++
++	/* Sets global pdev as a side effect */
++	err = f71805f_device_add(address, &sio_data);
++	if (err)
++		goto exit_driver;
++
++	return 0;
++
++exit_driver:
++	platform_driver_unregister(&f71805f_driver);
++exit:
++	return err;
++}
++
++static void __exit f71805f_exit(void)
++{
++	platform_device_unregister(pdev);
++	platform_driver_unregister(&f71805f_driver);
++}
++
++MODULE_AUTHOR("Nick Chen <nick1chen@aaeon.com.tw>");
++MODULE_LICENSE("GPL");
++MODULE_DESCRIPTION("AAEON EC hardware monitoring driver");
++
++module_init(f71805f_init);
++module_exit(f71805f_exit);
+-- 
+2.15.1
+
