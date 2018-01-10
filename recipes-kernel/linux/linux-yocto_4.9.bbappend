@@ -4,3 +4,4 @@ require recipes-kernel/linux/linux-aaeonc.inc
 SRCREV_machine_pn-linux-yocto_aaeonc ?= "${AUTOREV}"
 SRCREV_meta_pn-linux-yocto_aaeonc ?= "${AUTOREV}"
 
+KERNEL_VERSION_SANITY_SKIP="1"
