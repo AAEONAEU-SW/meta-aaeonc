@@ -1,6 +1,7 @@
 DESCRIPTION = "Linux image for AAEON Community family boards based on core-image-sato"
 LICENSE = "GPLv2"
 IMAGE_FEATURES += "package-management"
+IMAGE_FEATURES += "dev-pkgs"
 IMAGE_INSTALL += "kernel-modules"
 IMAGE_INSTALL += "dmidecode"
 IMAGE_INSTALL += "python"
