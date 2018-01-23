@@ -7,6 +7,6 @@ IMAGE_INSTALL += "alsa-utils"
 IMAGE_INSTALL += "dropbear parted"
 IMAGE_INSTALL += "i2c-tools git vim"
 IMAGE_INSTALL += "file"
-# IMAGE_INSTALL += "lmsensors"
-# IMAGE_INSTALL += "init-f75111"
+IMAGE_INSTALL += "lmsensors-libsensors lmsensors-sensors lmsensors-sensorsdetect"
+IMAGE_INSTALL += "init-f75111"
 
