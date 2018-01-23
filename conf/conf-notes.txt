@@ -4,4 +4,7 @@ Common targets are:
     meta-toolchain
     meta-ide-support
 
+Targets from this layer are
+    aaeonc-image-sato
+
 You can also run generated qemu images with a command like 'runqemu qemux86'
