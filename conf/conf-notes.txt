@@ -6,5 +6,7 @@ Common targets are:
 
 Targets from this layer are
     aaeonc-image-sato
+    aaeonc-image-full-cmdline
 
 You can also run generated qemu images with a command like 'runqemu qemux86'
+
