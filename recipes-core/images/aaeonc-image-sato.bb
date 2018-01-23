@@ -1,7 +1,7 @@
 DESCRIPTION = "Linux image for AAEON Community family boards based on core-image-sato"
 LICENSE = "GPLv2"
 
-inherit recipes-sato/images/core-image-sato.bb
+require recipes-sato/images/core-image-sato.bb
 
 IMAGE_FEATURES += "package-management"
 IMAGE_FEATURES += "dev-pkgs"
