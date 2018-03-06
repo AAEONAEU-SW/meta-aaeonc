@@ -14,7 +14,7 @@ SRC_URI = "file://License.txt \
 S = "${WORKDIR}"
 
 do_compile() {
-	make
+	oe_runmake
 }
 
 do_install () {
