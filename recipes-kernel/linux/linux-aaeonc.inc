@@ -1,5 +1,7 @@
-FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
-PR := "${PR}.1"
-COMPATIBLE_MACHINE_aaeonc = "aaeonc"
-SRC_URI += "file://aaeonc.scc"
+PR := "${PR}.2"
 
+COMPATIBLE_MACHINE_aaeonc = "aaeonc"
+FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
+
+SRC_URI += "file://aaeonc.scc"
+SRC_URI += "file://aaeonc.cfg"
