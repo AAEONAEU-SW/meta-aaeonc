@@ -5,19 +5,16 @@ LICENSE = "BSD-3-Clause"
 LIC_FILES_CHKSUM = "file://License.txt;md5=1e492cfcb05c60002d4bee800bd9c296"
 
 SRC_URI = "file://License.txt \
-           file://Makefile \
-           file://README.md \
-           file://README.txt \
            file://eltt2.c \
            file://eltt2.h"
 
 S = "${WORKDIR}"
 
 do_compile() {
-	oe_runmake
+	${CC} ${LDFLAGS} eltt2.c -o eltt2
 }
 
-do_install () {
+do_install() {
 	install -d ${D}${bindir}
 	install -m 755 eltt2 ${D}${bindir}
 }
