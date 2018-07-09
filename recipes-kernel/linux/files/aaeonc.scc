@@ -15,3 +15,7 @@ patch pico-apl3/0001-AAEONC-added-support-for-IT8528-gpio-driver.patch
 patch pico-apl3/0002-AAEONC-added-support-for-IT8528-i2c-driver.patch
 patch pico-apl3/0003-AAEONC-added-support-for-IT8528-wdt-driver.patch
 patch pico-apl3/0004-AAEONC-added-support-for-IT8528-hwmon-driver.patch
+
+patch pico-kbu4/0001-AAEONC-Updated-driver-for-f75111-gpio.patch
+patch pico-kbu4/0002-AAEONC-Update-for-hardware-monitor-f71882fg-driver.patch
+patch pico-kbu4/0003-AAEONC-Update-for-watchdog-f71808e-driver.patch

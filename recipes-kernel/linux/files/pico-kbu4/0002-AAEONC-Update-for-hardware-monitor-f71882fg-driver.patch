@@ -1,0 +1,272 @@
+From 95f41bc7093cd0566103d96b376f40352a1a8ca8 Mon Sep 17 00:00:00 2001
+From: Carlos Calderon <carlos@emutex.com>
+Date: Mon, 9 Jul 2018 15:39:17 +0100
+Subject: [PATCH] AAEONC: Update for hardware monitor f71882fg driver
+
+---
+ drivers/hwmon/f71882fg.c | 106 +++++++++++++++++++++++++++++++++++++++--------
+ 1 file changed, 89 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/hwmon/f71882fg.c b/drivers/hwmon/f71882fg.c
+index 3f65ef6..5bfa4d7 100644
+--- a/drivers/hwmon/f71882fg.c
++++ b/drivers/hwmon/f71882fg.c
+@@ -1,7 +1,8 @@
+ /***************************************************************************
+- *   Copyright (C) 2006 by Hans Edgington <hans@edgington.nl>              *
+- *   Copyright (C) 2007-2011 Hans de Goede <hdegoede@redhat.com>           *
++ *   Copyright (C) 2017 by Nick Chen <nick1chen@aaeon.com.tw>              *
+  *                                                                         *
++ *			Based on f71882fg.c by Hans Edgington, Hans de Goede						   *
++ *																		   *
+  *   This program is free software; you can redistribute it and/or modify  *
+  *   it under the terms of the GNU General Public License as published by  *
+  *   the Free Software Foundation; either version 2 of the License, or     *
+@@ -55,11 +56,17 @@
+ #define SIO_F71869_ID		0x0814	/* Chipset ID */
+ #define SIO_F71869A_ID		0x1007	/* Chipset ID */
+ #define SIO_F71882_ID		0x0541	/* Chipset ID */
+-#define SIO_F71889_ID		0x0723	/* Chipset ID */
+ #define SIO_F71889E_ID		0x0909	/* Chipset ID */
+ #define SIO_F71889A_ID		0x1005	/* Chipset ID */
+ #define SIO_F8000_ID		0x0581	/* Chipset ID */
+ #define SIO_F81768D_ID		0x1210	/* Chipset ID */
++
++// Modified by Nick1Chen@20170622 {{{
++
++#define SIO_F81801_ID		0x0723	/* Chipset ID */
++
++// }}}
++
+ #define SIO_F81865_ID		0x0704	/* Chipset ID */
+ #define SIO_F81866_ID		0x1010	/* Chipset ID */
+ 
+@@ -116,10 +123,14 @@ static unsigned short force_id;
+ module_param(force_id, ushort, 0);
+ MODULE_PARM_DESC(force_id, "Override the detected device ID");
+ 
++// Modified by Nick1Chen@20170622 {{{
++
+ enum chips { f71808e, f71808a, f71858fg, f71862fg, f71868a, f71869, f71869a,
+-	f71882fg, f71889fg, f71889ed, f71889a, f8000, f81768d, f81865f,
++	f71882fg, f71889ed, f71889a, f8000, f81768d, f81801u, f81865f,
+ 	f81866a};
+ 
++// }}}
++
+ static const char *const f71882fg_names[] = {
+ 	"f71808e",
+ 	"f71808a",
+@@ -129,11 +140,17 @@ static const char *const f71882fg_names[] = {
+ 	"f71869", /* Both f71869f and f71869e, reg. compatible and same id */
+ 	"f71869a",
+ 	"f71882fg",
+-	"f71889fg", /* f81801u too, same id */
+ 	"f71889ed",
+ 	"f71889a",
+ 	"f8000",
+ 	"f81768d",
++
++// Modified by Nick1Chen@20170622 {{{
++
++	"f81801u", /* f71889fg too, same id */
++
++// }}}
++
+ 	"f81865f",
+ 	"f81866a",
+ };
+@@ -147,11 +164,17 @@ static const char f71882fg_has_in[][F71882FG_MAX_INS] = {
+ 	[f71869]	= { 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 },
+ 	[f71869a]	= { 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 },
+ 	[f71882fg]	= { 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 },
+-	[f71889fg]	= { 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 },
+ 	[f71889ed]	= { 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 },
+ 	[f71889a]	= { 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 },
+ 	[f8000]		= { 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0 },
+ 	[f81768d]	= { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
++
++// Modified by Nick1Chen@20170622 {{{
++
++	[f81801u]	= { 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 },
++
++// }}}
++
+ 	[f81865f]	= { 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 },
+ 	[f81866a]	= { 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0 },
+ };
+@@ -165,11 +188,17 @@ static const char f71882fg_has_in1_alarm[] = {
+ 	[f71869]	= 0,
+ 	[f71869a]	= 0,
+ 	[f71882fg]	= 1,
+-	[f71889fg]	= 1,
+ 	[f71889ed]	= 1,
+ 	[f71889a]	= 1,
+ 	[f8000]		= 0,
+ 	[f81768d]	= 1,
++
++// Modified by Nick1Chen@20170622 {{{
++
++	[f81801u]	= 1,
++
++// }}}
++
+ 	[f81865f]	= 1,
+ 	[f81866a]	= 1,
+ };
+@@ -183,11 +212,17 @@ static const char f71882fg_fan_has_beep[] = {
+ 	[f71869]	= 1,
+ 	[f71869a]	= 1,
+ 	[f71882fg]	= 1,
+-	[f71889fg]	= 1,
+ 	[f71889ed]	= 1,
+ 	[f71889a]	= 1,
+ 	[f8000]		= 0,
+ 	[f81768d]	= 1,
++
++// Modified by Nick1Chen@20170622 {{{
++
++	[f81801u]	= 1,
++
++// }}}
++
+ 	[f81865f]	= 1,
+ 	[f81866a]	= 1,
+ };
+@@ -201,11 +236,17 @@ static const char f71882fg_nr_fans[] = {
+ 	[f71869]	= 3,
+ 	[f71869a]	= 3,
+ 	[f71882fg]	= 4,
+-	[f71889fg]	= 3,
+ 	[f71889ed]	= 3,
+ 	[f71889a]	= 3,
+ 	[f8000]		= 3, /* +1 fan which is monitor only */
+ 	[f81768d]	= 3,
++
++// Modified by Nick1Chen@20170622 {{{
++
++	[f81801u]	= 3,
++
++// }}}
++
+ 	[f81865f]	= 2,
+ 	[f81866a]	= 3,
+ };
+@@ -219,11 +260,17 @@ static const char f71882fg_temp_has_beep[] = {
+ 	[f71869]	= 1,
+ 	[f71869a]	= 1,
+ 	[f71882fg]	= 1,
+-	[f71889fg]	= 1,
+ 	[f71889ed]	= 1,
+ 	[f71889a]	= 1,
+ 	[f8000]		= 0,
+ 	[f81768d]	= 1,
++
++// Modified by Nick1Chen@20170622 {{{
++
++	[f81801u]	= 1,
++
++// }}}
++
+ 	[f81865f]	= 1,
+ 	[f81866a]	= 1,
+ };
+@@ -237,11 +284,17 @@ static const char f71882fg_nr_temps[] = {
+ 	[f71869]	= 3,
+ 	[f71869a]	= 3,
+ 	[f71882fg]	= 3,
+-	[f71889fg]	= 3,
+ 	[f71889ed]	= 3,
+ 	[f71889a]	= 3,
+ 	[f8000]		= 3,
+ 	[f81768d]	= 3,
++
++// Modified by Nick1Chen@20170622 {{{
++
++	[f81801u]	= 3,
++
++// }}}
++
+ 	[f81865f]	= 2,
+ 	[f81866a]	= 3,
+ };
+@@ -2295,9 +2348,15 @@ static int f71882fg_create_fan_sysfs_files(
+ 	case f71808a:
+ 	case f71869:
+ 	case f71869a:
+-	case f71889fg:
+ 	case f71889ed:
+ 	case f71889a:
++
++// Modified by Nick1Chen@20170622 {{{
++
++	case f81801u:
++
++// }}}
++
+ 		data->pwm_auto_point_mapping[idx] =
+ 			f71882fg_read8(data, F71882FG_REG_POINT_MAPPING(idx));
+ 		if ((data->pwm_auto_point_mapping[idx] & 0x80) ||
+@@ -2456,9 +2515,15 @@ static int f71882fg_probe(struct platform_device *pdev)
+ 			/* These always have signed auto point temps */
+ 			data->auto_point_temp_signed = 1;
+ 			/* Fall through to select correct fan/pwm reg bank! */
+-		case f71889fg:
+ 		case f71889ed:
+ 		case f71889a:
++
++// Modified by Nick1Chen@20170622 {{{
++
++		case f81801u:
++
++// }}}
++
+ 			reg = f71882fg_read8(data, F71882FG_REG_FAN_FAULT_T);
+ 			if (reg & F71882FG_FAN_NEG_TEMP_EN)
+ 				data->auto_point_temp_signed = 1;
+@@ -2666,9 +2731,6 @@ static int __init f71882fg_find(int sioaddr, struct f71882fg_sio_data *sio_data)
+ 	case SIO_F71882_ID:
+ 		sio_data->type = f71882fg;
+ 		break;
+-	case SIO_F71889_ID:
+-		sio_data->type = f71889fg;
+-		break;
+ 	case SIO_F71889E_ID:
+ 		sio_data->type = f71889ed;
+ 		break;
+@@ -2681,6 +2743,15 @@ static int __init f71882fg_find(int sioaddr, struct f71882fg_sio_data *sio_data)
+ 	case SIO_F81768D_ID:
+ 		sio_data->type = f81768d;
+ 		break;
++
++// Modified by Nick1Chen@20170622 {{{
++
++	case SIO_F81801_ID:
++		sio_data->type = f81801u;
++		break;
++
++// }}}
++		
+ 	case SIO_F81865_ID:
+ 		sio_data->type = f81865f;
+ 		break;
+@@ -2742,6 +2813,7 @@ static int __init f71882fg_device_add(int address,
+ 		pr_warn("ACPI resource already reserved by another device. Check your ACPI table declaration\n");
+ 		/* FIXME: goto exit_device_put; */
+ 	}
++
+ 	err = platform_device_add_resources(f71882fg_pdev, &res, 1);
+ 	if (err) {
+ 		pr_err("Device resource addition failed\n");
+@@ -2805,7 +2877,7 @@ static void __exit f71882fg_exit(void)
+ }
+ 
+ MODULE_DESCRIPTION("F71882FG Hardware Monitoring Driver");
+-MODULE_AUTHOR("Hans Edgington, Hans de Goede <hdegoede@redhat.com>");
++MODULE_AUTHOR("Nick Chen <nick1chen@aaeon.com.tw>");
+ MODULE_LICENSE("GPL");
+ 
+ module_init(f71882fg_init);
+-- 
+2.7.4
+

@@ -1,0 +1,67 @@
+From 4e4e239f51670ba319c2a8667ca0157f6e1ea229 Mon Sep 17 00:00:00 2001
+From: Carlos Calderon <carlos@emutex.com>
+Date: Mon, 9 Jul 2018 15:42:24 +0100
+Subject: [PATCH] AAEONC: Update for watchdog f71808e driver
+
+---
+ drivers/watchdog/f71808e_wdt.c | 25 ++++++++++++++++++++-----
+ 1 file changed, 20 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/watchdog/f71808e_wdt.c b/drivers/watchdog/f71808e_wdt.c
+index 1b7e916..d4cb7a1 100644
+--- a/drivers/watchdog/f71808e_wdt.c
++++ b/drivers/watchdog/f71808e_wdt.c
+@@ -1,7 +1,7 @@
+ /***************************************************************************
+- *   Copyright (C) 2006 by Hans Edgington <hans@edgington.nl>              *
+- *   Copyright (C) 2007-2009 Hans de Goede <hdegoede@redhat.com>           *
+- *   Copyright (C) 2010 Giel van Schijndel <me@mortis.eu>                  *
++ *   Copyright (C) 2017 by Nick Chen <nick1chen@aaeon.com.tw>              *
++ *																		   *
++ *		Based on f71808e_wdt.c by Giel van Schijndel					   *
+  *                                                                         *
+  *   This program is free software; you can redistribute it and/or modify  *
+  *   it under the terms of the GNU General Public License as published by  *
+@@ -34,6 +34,12 @@
+ #include <linux/uaccess.h>
+ #include <linux/watchdog.h>
+ 
++// Modified by Nick1Chen@20170622 {{{
++
++#include <linux/version.h>
++
++// }}}
++
+ #define DRVNAME "f71808e_wdt"
+ 
+ #define SIO_F71808FG_LD_WDT	0x07	/* Watchdog timer logical device */
+@@ -110,7 +116,16 @@ MODULE_PARM_DESC(f71862fg_pin,
+ 	"Watchdog f71862fg reset output pin configuration. Choose pin 56 or 63"
+ 			" (default=" __MODULE_STRING(WATCHDOG_F71862FG_PIN)")");
+ 
+-static bool nowayout = WATCHDOG_NOWAYOUT;
++// Modified by Nick1Chen@20170622 {{{
++
++#if ( LINUX_VERSION_CODE > KERNEL_VERSION(4,4,0) )
++	static bool nowayout = WATCHDOG_NOWAYOUT;
++#else
++    static int nowayout = WATCHDOG_NOWAYOUT;
++#endif
++
++// }}}
++
+ module_param(nowayout, bool, 0444);
+ MODULE_PARM_DESC(nowayout, "Disable watchdog shutdown on close");
+ 
+@@ -855,7 +870,7 @@ static void __exit f71808e_exit(void)
+ }
+ 
+ MODULE_DESCRIPTION("F71808E Watchdog Driver");
+-MODULE_AUTHOR("Giel van Schijndel <me@mortis.eu>");
++MODULE_AUTHOR("Nick Chen <nick1chen@aaeon.com.tw>");
+ MODULE_LICENSE("GPL");
+ 
+ module_init(f71808e_init);
+-- 
+2.7.4
+
