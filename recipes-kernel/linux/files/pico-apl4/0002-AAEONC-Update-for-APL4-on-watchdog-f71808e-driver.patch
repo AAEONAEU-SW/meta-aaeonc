@@ -1,0 +1,78 @@
+From cd0ccae546278e06ac7f164e77f0bee51252eedb Mon Sep 17 00:00:00 2001
+From: Carlos Calderon <carlos@emuex.com>
+Date: Thu, 6 Sep 2018 09:02:03 +0100
+Subject: [PATCH] AAEONC: Update for APL4 on watchdog f71808e driver
+
+---
+ drivers/watchdog/f71808e_wdt.c | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/watchdog/f71808e_wdt.c b/drivers/watchdog/f71808e_wdt.c
+index d4cb7a1..4e61133 100644
+--- a/drivers/watchdog/f71808e_wdt.c
++++ b/drivers/watchdog/f71808e_wdt.c
+@@ -69,6 +69,7 @@
+ #define SIO_F71889_ID		0x0723	/* Chipset ID */
+ #define SIO_F81865_ID		0x0704	/* Chipset ID */
+ #define SIO_F81866_ID		0x1010	/* Chipset ID */
++#define SIO_F81804_ID		0x1502	/* Chipset ID */ 
+ 
+ #define F71808FG_REG_WDO_CONF		0xf0
+ #define F71808FG_REG_WDT_CONF		0xf5
+@@ -135,7 +136,7 @@ MODULE_PARM_DESC(start_withtimeout, "Start watchdog timer on module load with"
+ 	" given initial timeout. Zero (default) disables this feature.");
+ 
+ enum chips { f71808fg, f71858fg, f71862fg, f71869, f71882fg, f71889fg, f81865,
+-	     f81866};
++	     f81866, f81804};
+ 
+ static const char *f71808e_names[] = {
+ 	"f71808fg",
+@@ -146,6 +147,7 @@ static const char *f71808e_names[] = {
+ 	"f71889fg",
+ 	"f81865",
+ 	"f81866",
++	"f81804",
+ };
+ 
+ /* Super-I/O Function prototypes */
+@@ -391,14 +393,15 @@ static int watchdog_start(void)
+ 		break;
+ 
+ 	case f81866:
+-		/* Set pin 70 to WDTRST# */
++	case f81804:
++		/* Set pin 70/29 on F81866/F81804 to WDTRST# */
+ 		superio_clear_bit(watchdog.sioaddr, SIO_F81866_REG_PORT_SEL,
+ 				  BIT(3) | BIT(0));
+ 		superio_set_bit(watchdog.sioaddr, SIO_F81866_REG_PORT_SEL,
+ 				BIT(2));
+ 		/*
+ 		 * GPIO1 Control Register when 27h BIT3:2 = 01 & BIT0 = 0.
+-		 * The PIN 70(GPIO15/WDTRST) is controlled by 2Ch:
++		 * The PIN 70/29(GPIO15/WDTRST) is controlled by 2Ch:
+ 		 *     BIT5: 0 -> WDTRST#
+ 		 *           1 -> GPIO15
+ 		 */
+@@ -418,7 +421,7 @@ static int watchdog_start(void)
+ 	superio_select(watchdog.sioaddr, SIO_F71808FG_LD_WDT);
+ 	superio_set_bit(watchdog.sioaddr, SIO_REG_ENABLE, 0);
+ 
+-	if (watchdog.type == f81865 || watchdog.type == f81866)
++	if (watchdog.type == f81865 || watchdog.type == f81866 || watchdog.type == f81804)
+ 		superio_set_bit(watchdog.sioaddr, F81865_REG_WDO_CONF,
+ 				F81865_FLAG_WDOUT_EN);
+ 	else
+@@ -827,6 +830,9 @@ static int __init f71808e_find(int sioaddr)
+ 	case SIO_F81866_ID:
+ 		watchdog.type = f81866;
+ 		break;
++	case SIO_F81804_ID:
++		watchdog.type = f81804;
++		break;
+ 	default:
+ 		pr_info("Unrecognized Fintek device: %04x\n",
+ 			(unsigned int)devid);
+-- 
+2.7.4
+

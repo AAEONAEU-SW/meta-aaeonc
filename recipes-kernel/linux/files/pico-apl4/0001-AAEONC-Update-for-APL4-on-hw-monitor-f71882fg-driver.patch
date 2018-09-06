@@ -1,0 +1,187 @@
+From 7d06b1f4f06aaddaf93d5154e63b9ff2f3d8bad2 Mon Sep 17 00:00:00 2001
+From: Carlos Calderon <carlos@emuex.com>
+Date: Thu, 6 Sep 2018 09:05:31 +0100
+Subject: [PATCH] AAEONC: Update for APL4 on hw monitor f71882fg driver
+
+---
+ drivers/hwmon/f71882fg.c | 31 ++++++++++++++++++++++---------
+ 1 file changed, 22 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/hwmon/f71882fg.c b/drivers/hwmon/f71882fg.c
+index 5bfa4d7..315224c 100644
+--- a/drivers/hwmon/f71882fg.c
++++ b/drivers/hwmon/f71882fg.c
+@@ -69,6 +69,7 @@
+ 
+ #define SIO_F81865_ID		0x0704	/* Chipset ID */
+ #define SIO_F81866_ID		0x1010	/* Chipset ID */
++#define SIO_F81804_ID		0x1502	/* Chipset ID */
+ 
+ #define REGION_LENGTH		8
+ #define ADDR_REG_OFFSET		5
+@@ -127,7 +128,7 @@ MODULE_PARM_DESC(force_id, "Override the detected device ID");
+ 
+ enum chips { f71808e, f71808a, f71858fg, f71862fg, f71868a, f71869, f71869a,
+ 	f71882fg, f71889ed, f71889a, f8000, f81768d, f81801u, f81865f,
+-	f81866a};
++	f81866a, f81804};
+ 
+ // }}}
+ 
+@@ -153,6 +154,7 @@ static const char *const f71882fg_names[] = {
+ 
+ 	"f81865f",
+ 	"f81866a",
++	"f81804",
+ };
+ 
+ static const char f71882fg_has_in[][F71882FG_MAX_INS] = {
+@@ -177,6 +179,7 @@ static const char f71882fg_has_in[][F71882FG_MAX_INS] = {
+ 
+ 	[f81865f]	= { 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 },
+ 	[f81866a]	= { 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0 },
++	[f81804]	= { 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0 },
+ };
+ 
+ static const char f71882fg_has_in1_alarm[] = {
+@@ -201,6 +204,7 @@ static const char f71882fg_has_in1_alarm[] = {
+ 
+ 	[f81865f]	= 1,
+ 	[f81866a]	= 1,
++	[f81804]	= 1,
+ };
+ 
+ static const char f71882fg_fan_has_beep[] = {
+@@ -225,6 +229,7 @@ static const char f71882fg_fan_has_beep[] = {
+ 
+ 	[f81865f]	= 1,
+ 	[f81866a]	= 1,
++	[f81804]	= 1,
+ };
+ 
+ static const char f71882fg_nr_fans[] = {
+@@ -249,6 +254,7 @@ static const char f71882fg_nr_fans[] = {
+ 
+ 	[f81865f]	= 2,
+ 	[f81866a]	= 3,
++	[f81804]	= 3,
+ };
+ 
+ static const char f71882fg_temp_has_beep[] = {
+@@ -273,6 +279,7 @@ static const char f71882fg_temp_has_beep[] = {
+ 
+ 	[f81865f]	= 1,
+ 	[f81866a]	= 1,
++	[f81804]	= 1,
+ };
+ 
+ static const char f71882fg_nr_temps[] = {
+@@ -297,6 +304,7 @@ static const char f71882fg_nr_temps[] = {
+ 
+ 	[f81865f]	= 2,
+ 	[f81866a]	= 3,
++	[f81804]	= 3,
+ };
+ 
+ static struct platform_device *f71882fg_pdev;
+@@ -1271,7 +1279,7 @@ static struct f71882fg_data *f71882fg_update_device(struct device *dev)
+ 	if (time_after(jiffies, data->last_limits + 60 * HZ) ||
+ 			!data->valid) {
+ 		if (f71882fg_has_in1_alarm[data->type]) {
+-			if (data->type == f81866a) {
++			if (data->type == f81866a || data->type == f81804) {
+ 				data->in1_max =
+ 					f71882fg_read8(data,
+ 						       F81866_REG_IN1_HIGH);
+@@ -1410,7 +1418,7 @@ static struct f71882fg_data *f71882fg_update_device(struct device *dev)
+ 						F71882FG_REG_FAN(3));
+ 
+ 		if (f71882fg_has_in1_alarm[data->type]) {
+-			if (data->type == f81866a)
++			if (data->type == f81866a || data->type == f81804)
+ 				data->in_status = f71882fg_read8(data,
+ 						F81866_REG_IN_STATUS);
+ 
+@@ -1559,7 +1567,7 @@ static ssize_t store_in_max(struct device *dev, struct device_attribute
+ 	val = clamp_val(val, 0, 255);
+ 
+ 	mutex_lock(&data->update_lock);
+-	if (data->type == f81866a)
++	if (data->type == f81866a || data->type == f81804)
+ 		f71882fg_write8(data, F81866_REG_IN1_HIGH, val);
+ 	else
+ 		f71882fg_write8(data, F71882FG_REG_IN1_HIGH, val);
+@@ -1593,7 +1601,7 @@ static ssize_t store_in_beep(struct device *dev, struct device_attribute
+ 		return err;
+ 
+ 	mutex_lock(&data->update_lock);
+-	if (data->type == f81866a)
++	if (data->type == f81866a || data->type == f81804)
+ 		data->in_beep = f71882fg_read8(data, F81866_REG_IN_BEEP);
+ 	else
+ 		data->in_beep = f71882fg_read8(data, F71882FG_REG_IN_BEEP);
+@@ -1603,7 +1611,7 @@ static ssize_t store_in_beep(struct device *dev, struct device_attribute
+ 	else
+ 		data->in_beep &= ~(1 << nr);
+ 
+-	if (data->type == f81866a)
++	if (data->type == f81866a || data->type == f81804)
+ 		f71882fg_write8(data, F81866_REG_IN_BEEP, data->in_beep);
+ 	else
+ 		f71882fg_write8(data, F71882FG_REG_IN_BEEP, data->in_beep);
+@@ -2417,7 +2425,7 @@ static int f71882fg_probe(struct platform_device *pdev)
+ 	data->type = sio_data->type;
+ 	data->temp_start =
+ 	    (data->type == f71858fg || data->type == f8000 ||
+-		data->type == f81866a) ? 0 : 1;
++		data->type == f81866a || data->type == f81804) ? 0 : 1;
+ 	mutex_init(&data->update_lock);
+ 	platform_set_drvdata(pdev, data);
+ 
+@@ -2460,6 +2468,7 @@ static int f71882fg_probe(struct platform_device *pdev)
+ 					ARRAY_SIZE(f8000_temp_attr));
+ 			break;
+ 		case f81866a:
++		case f81804:
+ 			err = f71882fg_create_sysfs_files(pdev,
+ 					f71858fg_temp_attr,
+ 					ARRAY_SIZE(f71858fg_temp_attr));
+@@ -2473,7 +2482,7 @@ static int f71882fg_probe(struct platform_device *pdev)
+ 			goto exit_unregister_sysfs;
+ 
+ 		if (f71882fg_temp_has_beep[data->type]) {
+-			if (data->type == f81866a) {
++			if (data->type == f81866a || data->type == f81804) {
+ 				size = ARRAY_SIZE(f81866_temp_beep_attr[0]);
+ 				err = f71882fg_create_sysfs_files(pdev,
+ 						&f81866_temp_beep_attr[0][0],
+@@ -2608,6 +2617,7 @@ static int f71882fg_remove(struct platform_device *pdev)
+ 					ARRAY_SIZE(f8000_temp_attr));
+ 			break;
+ 		case f81866a:
++		case f81804:
+ 			f71882fg_remove_sysfs_files(pdev,
+ 					f71858fg_temp_attr,
+ 					ARRAY_SIZE(f71858fg_temp_attr));
+@@ -2618,7 +2628,7 @@ static int f71882fg_remove(struct platform_device *pdev)
+ 				ARRAY_SIZE(fxxxx_temp_attr[0]) * nr_temps);
+ 		}
+ 		if (f71882fg_temp_has_beep[data->type]) {
+-			if (data->type == f81866a)
++			if (data->type == f81866a || data->type == f81804)
+ 				f71882fg_remove_sysfs_files(pdev,
+ 					&f81866_temp_beep_attr[0][0],
+ 					ARRAY_SIZE(f81866_temp_beep_attr[0])
+@@ -2758,6 +2768,9 @@ static int __init f71882fg_find(int sioaddr, struct f71882fg_sio_data *sio_data)
+ 	case SIO_F81866_ID:
+ 		sio_data->type = f81866a;
+ 		break;
++	case SIO_F81804_ID:
++		sio_data->type = f81804;
++		break;
+ 	default:
+ 		pr_info("Unsupported Fintek device: %04x\n",
+ 			(unsigned int)devid);
+-- 
+2.7.4
+
