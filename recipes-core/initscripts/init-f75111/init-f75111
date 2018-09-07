@@ -1,3 +1,4 @@
 #!/bin/sh
 echo "f75111 0x37" > /sys/class/i2c-adapter/i2c-4/new_device
-
+#APL4
+echo "f75111 0x37" > /sys/class/i2c-adapter/i2c-3/new_device
