@@ -1,4 +1,4 @@
-From 6e0c6e56ffa91e8d0e3738f0ce9998f106091cde Mon Sep 17 00:00:00 2001
+From e0de881a105d7804767350877a5aea15f7429cca Mon Sep 17 00:00:00 2001
 From: Nicola Lunghi <nicola.lunghi@emutex.com>
 Date: Mon, 11 Dec 2017 15:01:13 +0000
 Subject: [PATCH 2/2] AAEONC: add driver for i2c port expander f75111
@@ -14,10 +14,10 @@ fix checkpatch on gpio-f75111.h
  create mode 100644 drivers/gpio/gpio-f75111.c
 
 diff --git a/drivers/gpio/Kconfig b/drivers/gpio/Kconfig
-index d5d36549ecc1..f69b839b1fb8 100644
+index d6a8e85..633ef00 100644
 --- a/drivers/gpio/Kconfig
 +++ b/drivers/gpio/Kconfig
-@@ -687,6 +687,15 @@ config GPIO_ADNP
+@@ -744,6 +744,15 @@ config GPIO_ADNP
  	  enough to represent all pins, but the driver will assume a
  	  register layout for 64 pins (8 registers).
  
@@ -34,20 +34,20 @@ index d5d36549ecc1..f69b839b1fb8 100644
  	tristate "Maxim MAX7300 GPIO expander"
  	select GPIO_MAX730X
 diff --git a/drivers/gpio/Makefile b/drivers/gpio/Makefile
-index a7676b82de6f..7a5bb01725ef 100644
+index 4bc24fe..2e7aad0 100644
 --- a/drivers/gpio/Makefile
 +++ b/drivers/gpio/Makefile
-@@ -47,6 +47,7 @@ obj-$(CONFIG_GPIO_EM)		+= gpio-em.o
- obj-$(CONFIG_GPIO_EP93XX)	+= gpio-ep93xx.o
+@@ -50,6 +50,7 @@ obj-$(CONFIG_GPIO_EP93XX)	+= gpio-ep93xx.o
  obj-$(CONFIG_GPIO_ETRAXFS)	+= gpio-etraxfs.o
+ obj-$(CONFIG_GPIO_EXAR)		+= gpio-exar.o
  obj-$(CONFIG_GPIO_F7188X)	+= gpio-f7188x.o
 +obj-$(CONFIG_GPIO_F75111)	+= gpio-f75111.o
+ obj-$(CONFIG_GPIO_FTGPIO010)	+= gpio-ftgpio010.o
  obj-$(CONFIG_GPIO_GE_FPGA)	+= gpio-ge.o
  obj-$(CONFIG_GPIO_GPIO_MM)	+= gpio-gpio-mm.o
- obj-$(CONFIG_GPIO_GRGPIO)	+= gpio-grgpio.o
 diff --git a/drivers/gpio/gpio-f75111.c b/drivers/gpio/gpio-f75111.c
 new file mode 100644
-index 000000000000..e76b7168bb7a
+index 0000000..e76b716
 --- /dev/null
 +++ b/drivers/gpio/gpio-f75111.c
 @@ -0,0 +1,407 @@
@@ -458,6 +458,3 @@ index 000000000000..e76b7168bb7a
 +MODULE_AUTHOR("Nick Chen <nick1chen@aaeon.com.tw>");
 +MODULE_DESCRIPTION("F75111 driver");
 +MODULE_LICENSE("GPL");
--- 
-2.15.1
-
