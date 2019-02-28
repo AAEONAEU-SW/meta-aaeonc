@@ -39,7 +39,7 @@ index 4bc24fe..2e7aad0 100644
 +++ b/drivers/gpio/Makefile
 @@ -50,6 +50,7 @@ obj-$(CONFIG_GPIO_EP93XX)	+= gpio-ep93xx.o
  obj-$(CONFIG_GPIO_ETRAXFS)	+= gpio-etraxfs.o
- obj-$(CONFIG_GPIO_EXAR)		+= gpio-exar.o
+ obj-$(CONFIG_GPIO_EXAR)	+= gpio-exar.o
  obj-$(CONFIG_GPIO_F7188X)	+= gpio-f7188x.o
 +obj-$(CONFIG_GPIO_F75111)	+= gpio-f75111.o
  obj-$(CONFIG_GPIO_FTGPIO010)	+= gpio-ftgpio010.o
@@ -123,15 +123,15 @@ index 0000000..e76b716
 +#define F75111_GPIO_OUT_DATA		0x01
 +#define F75111_GPIO_INP_STATUS		0x02
 +#define F75111_GPIO_PULSE_CTRL		0x03
-+#define F75111_GPIO_PULSE_WIDTH		0x04
-+#define F75111_GPIO_PULLUP			0x05
-+#define F75111_GPIO_INP_DB			0x06
++#define F75111_GPIO_PULSE_WIDTH	0x04
++#define F75111_GPIO_PULLUP		0x05
++#define F75111_GPIO_INP_DB		0x06
 +#define F75111_GPIO_PULSE_INV		0x07
-+#define F75111_GPIO_EDGE_EN			0x08
-+#define F75111_GPIO_EDGE_STATUS		0x09
-+#define F75111_GPIO_SMI_EN			0x0A
++#define F75111_GPIO_EDGE_EN		0x08
++#define F75111_GPIO_EDGE_STATUS	0x09
++#define F75111_GPIO_SMI_EN		0x0A
 +#define F75111_GPIO_OUT_DRIVE		0x0B
-+#define F75111_GPIO_DB_TIME			0x0C
++#define F75111_GPIO_DB_TIME		0x0C
 +
 +#define F75_CHIPID1			0x5A
 +#define F75_CHIPID2			0x5B

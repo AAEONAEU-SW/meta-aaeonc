@@ -20,7 +20,7 @@ Prerequisites
 
 Supported Yocto versions
 ------------------------
-* Yocto 2.3 (Pyro)
+* Yocto 2.5 (Sumo)
 
 Supported Hardware
 ------------------
@@ -30,25 +30,25 @@ Supported Hardware
 Building the meta-aaeonc BSP layer
 ==================================
 
-Download the latest Pyro release and enter the poky directory:
+Download the latest Sumo release and enter the poky directory:
 ```
-git clone -b pyro git://git.yoctoproject.org/poky.git
+git clone -b sumo git://git.yoctoproject.org/poky.git
 cd poky
 ```
 
-Download the latest Intel BSP layer version for Pyro:
+Download the latest Intel BSP layer version for Sumo:
 ```
-git clone -b pyro git://git.yoctoproject.org/meta-intel.git
-```
-
-Download the latest collection of layers for OE-core universe for Pyro:
-```
-git clone -b pyro git://git.openembedded.org/meta-openembedded
+git clone -b sumo git://git.yoctoproject.org/meta-intel.git
 ```
 
-Download this AAEON Community BSP layer for Pyro:
+Download the latest collection of layers for OE-core universe for Sumo:
 ```
-git clone -b pyro https://github.com/emutex/meta-aaeonc
+git clone -b sumo git://git.openembedded.org/meta-openembedded
+```
+
+Download this AAEON Community BSP layer for Sumo:
+```
+git clone -b sumo https://github.com/emutex/meta-aaeonc
 ```
 
 From the poky directory, you can build an image as such:

@@ -17,8 +17,8 @@ index c69c394..66d157b 100644
  #define SIO_F81866_ID		0x1010	/* Chipset ID */
 +#define SIO_F81804_ID		0x1502	/* Chipset ID */
  
- #define F71808FG_REG_WDO_CONF		0xf0
- #define F71808FG_REG_WDT_CONF		0xf5
+ #define F71808FG_REG_WDO_CONF	0xf0
+ #define F71808FG_REG_WDT_CONF	0xf5
 @@ -136,7 +137,7 @@ MODULE_PARM_DESC(start_withtimeout, "Start watchdog timer on module load with"
  	" given initial timeout. Zero (default) disables this feature.");
  
@@ -78,4 +78,4 @@ index c69c394..66d157b 100644
  
  module_init(f71808e_init);
 -module_exit(f71808e_exit);
-+	module_exit(f71808e_exit);
++module_exit(f71808e_exit);
