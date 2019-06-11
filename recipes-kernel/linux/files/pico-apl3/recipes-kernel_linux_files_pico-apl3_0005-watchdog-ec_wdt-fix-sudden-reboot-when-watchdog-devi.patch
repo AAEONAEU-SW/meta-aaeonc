@@ -1,0 +1,108 @@
+From e920120d0eee23bc049d087d598a06df9c4178d8 Mon Sep 17 00:00:00 2001
+From: Dan O'Donovan <dan@emutex.com>
+Date: Tue, 19 Mar 2019 16:10:29 +0000
+Subject: [PATCH 5/6] watchdog: ec_wdt: fix sudden reboot when watchdog device
+ is opened
+
+This watchdog may reboot suddenly when the watchdog device is opened,
+particularly after a cold boot or wake-from-suspend.
+
+The problem was that the watchdog pulse output level (HIGH or LOW)
+wasn't explicitly set and was defaulting to a HIGH setting when the
+correct value is LOW.  This caused the logic to be inverted and the
+signal to flip low which triggered an immediate reset of the CPU.
+
+The pulse-type is now explicitly set to LOW for any writes to the
+Watchdog Configuration register.
+---
+ drivers/watchdog/ec_wdt.c | 37 +++++++++++++++++--------------------
+ 1 file changed, 17 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/watchdog/ec_wdt.c b/drivers/watchdog/ec_wdt.c
+index 3dc986e..8f57bd8 100644
+--- a/drivers/watchdog/ec_wdt.c
++++ b/drivers/watchdog/ec_wdt.c
+@@ -61,11 +61,14 @@
+ 
+ 
+ /* WDT Device Configuration Registers (LDN CR07) */
+-#define EC_REG_WDT_CONF     0x14    /* WDT Control Register */
+ #define EC_REG_WD_TIME      0x13    /* WDT Time Register */
++#define EC_REG_WD_CONF      0x14    /* WDT Control Register */
+ 
+ /* Watchdog Timer Function and WDT Control Register Flags */
+-#define EC_FLAG_WD_UNIT       0       /* WD time unit */
++#define EC_FLAG_WD_CONF_UNIT_SEC   (0x0 << 0) /* WD time unit: seconds */
++#define EC_FLAG_WD_CONF_UNIT_MIN   (0x1 << 0) /* WD time unit: minutes */
++#define EC_FLAG_WD_CONF_PULSE_HIGH (0x0 << 1) /* WD pulse type: active-high */
++#define EC_FLAG_WD_CONF_PULSE_LOW  (0x1 << 1) /* WD pulse type: active-high */
+ 
+ /* Default values */
+ #define WATCHDOG_TIMEOUT        60      /* 1 minute default timeout */
+@@ -197,10 +200,10 @@ static int watchdog_set_timeout(int timeout)
+ 		pr_info("current timer for minute is: %d\n",
+ 			DIV_ROUND_UP(timeout, 60));
+ 		watchdog.timer_val = DIV_ROUND_UP(timeout, 60);
+-		watchdog.timer_unit = 1;
++		watchdog.timer_unit = EC_FLAG_WD_CONF_UNIT_MIN;
+ 	} else {
+ 		watchdog.timer_val = timeout;
+-		watchdog.timer_unit = 0;
++		watchdog.timer_unit = EC_FLAG_WD_CONF_UNIT_SEC;
+ 	}
+ 
+ 	mutex_unlock(&watchdog.lock);
+@@ -224,12 +227,9 @@ static int watchdog_keepalive(void)
+ 	/* Set Function Register to 00 */
+ 	superio_outb(watchdog.sioaddr, SIO_EC_LF_REG, SIO_EC_FD_WDT);
+ 
+-	if (watchdog.timer_unit == 1)
+-		superio_set_bit(watchdog.sioaddr,
+-			EC_REG_WDT_CONF, EC_FLAG_WD_UNIT);
+-	else
+-		superio_clear_bit(watchdog.sioaddr,
+-			EC_REG_WDT_CONF, EC_FLAG_WD_UNIT);
++	/* Set timer configuration (active-low pulse, and sec/min units) */
++	superio_outb(watchdog.sioaddr, EC_REG_WD_CONF,
++		     EC_FLAG_WD_CONF_PULSE_LOW | watchdog.timer_unit);
+ 
+ 	/* Set timer value */
+ 	superio_outb(watchdog.sioaddr, EC_REG_WD_TIME, watchdog.timer_val);
+@@ -270,12 +270,9 @@ static int watchdog_start(void)
+ 
+ 	superio_outb(watchdog.sioaddr, SIO_EC_LF_REG, SIO_EC_FD_WDT);
+ 
+-	if (watchdog.timer_unit == 1)
+-		superio_set_bit(watchdog.sioaddr,
+-			EC_REG_WDT_CONF, EC_FLAG_WD_UNIT);
+-	else
+-		superio_clear_bit(watchdog.sioaddr,
+-			EC_REG_WDT_CONF, EC_FLAG_WD_UNIT);
++	/* Set timer configuration (active-low pulse, and sec/min units) */
++	superio_outb(watchdog.sioaddr, EC_REG_WD_CONF,
++		     EC_FLAG_WD_CONF_PULSE_LOW | watchdog.timer_unit);
+ 
+ 	/* Set timer value */
+ 	superio_outb(watchdog.sioaddr, EC_REG_WD_TIME, watchdog.timer_val);
+@@ -547,14 +544,14 @@ static int __init watchdog_init(int sio_addr)
+ 
+ 		if (start_withtimeout > 0xff) {
+ 			/* select minutes for timer units */
+-			superio_set_bit(watchdog.sioaddr, EC_REG_WDT_CONF,
+-					EC_FLAG_WD_UNIT);
++			superio_outb(watchdog.sioaddr, EC_REG_WD_CONF,
++				     EC_FLAG_WD_CONF_PULSE_LOW | EC_FLAG_WD_CONF_UNIT_MIN);
+ 			superio_outb(watchdog.sioaddr, EC_REG_WD_TIME,
+ 					DIV_ROUND_UP(start_withtimeout, 60));
+ 		} else {
+ 			/* select seconds for timer units */
+-			superio_clear_bit(watchdog.sioaddr, EC_REG_WDT_CONF,
+-					EC_FLAG_WD_UNIT);
++			superio_outb(watchdog.sioaddr, EC_REG_WD_CONF,
++				     EC_FLAG_WD_CONF_PULSE_LOW | EC_FLAG_WD_CONF_UNIT_SEC);
+ 			superio_outb(watchdog.sioaddr, EC_REG_WD_TIME,
+ 					start_withtimeout);
+ 		}
+-- 
+2.7.4
+

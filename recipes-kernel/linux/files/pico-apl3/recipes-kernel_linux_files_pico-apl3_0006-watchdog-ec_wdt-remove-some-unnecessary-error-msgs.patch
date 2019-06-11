@@ -1,0 +1,74 @@
+From fed01068e56abab21f2d3cd31407366dfe6f5727 Mon Sep 17 00:00:00 2001
+From: Dan O'Donovan <dan@emutex.com>
+Date: Tue, 19 Mar 2019 16:19:04 +0000
+Subject: [PATCH] watchdog: ec_wdt: remove some unnecessary error msgs
+
+---
+ drivers/watchdog/ec_wdt.c | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/watchdog/ec_wdt.c b/drivers/watchdog/ec_wdt.c
+index 8f57bd8..de3f33c 100644
+--- a/drivers/watchdog/ec_wdt.c
++++ b/drivers/watchdog/ec_wdt.c
+@@ -258,7 +258,6 @@ static int watchdog_start(void)
+ 	switch (watchdog.type) {
+ 	case aaeonec:
+ 		/* Set pin 70 the function of WDTRST#/GPIO15 is WDTRST# */
+-		pr_err(DRVNAME ": Set pin 70 the function of WDTRST#/GPIO15 is WDTRST#\n");
+ 		break;
+ 	default:
+ 		pr_err(DRVNAME ": Unable to configure WDTRST pin...\n");
+@@ -285,7 +284,7 @@ static int watchdog_start(void)
+ exit_unlock:
+ 	mutex_unlock(&watchdog.lock);
+ 
+-	pr_info(DRVNAME ": watchdog_start(%d)...\n", err);
++	pr_debug(DRVNAME ": watchdog_start(%d)...\n", err);
+ 	return err;
+ }
+ 
+@@ -333,7 +332,7 @@ static bool watchdog_is_running(void)
+ exit_unlock:
+ 	mutex_unlock(&watchdog.lock);
+ 
+-	pr_info(DRVNAME ": watchdog_is_running(%s)...\n",
++	pr_debug(DRVNAME ": watchdog_is_running(%s)...\n",
+ 		(is_running ? "Yes" : "No"));
+ 	return is_running;
+ }
+@@ -359,7 +358,7 @@ static int watchdog_open(struct inode *inode, struct file *file)
+ 
+ 	watchdog.expect_close = 0;
+ 
+-	pr_info(DRVNAME ": watchdog open...\n");
++	pr_debug(DRVNAME ": watchdog open...\n");
+ 
+ 	return nonseekable_open(inode, file);
+ }
+@@ -370,11 +369,11 @@ static int watchdog_release(struct inode *inode, struct file *file)
+ 
+ 	if (!watchdog.expect_close) {
+ 		watchdog_keepalive();
+-		pr_crit(DRVNAME ": Unexpected close, not stopping watchdog!\n");
++		pr_warn(DRVNAME ": Unexpected close, not stopping watchdog!\n");
+ 	} else if (!nowayout)
+ 		watchdog_stop();
+ 
+-	pr_info(DRVNAME ": watchdog release...\n");
++	pr_debug(DRVNAME ": watchdog release...\n");
+ 	return 0;
+ }
+ 
+@@ -567,7 +566,7 @@ static int __init watchdog_init(int sio_addr)
+ 			start_withtimeout);
+ 	}
+ 
+-	pr_info(DRVNAME
++	pr_debug(DRVNAME
+ 		": watchdog started with  timeout of %u sec\n",
+ 		watchdog.timeout);
+ 	return 0;
+-- 
+2.7.4
+
